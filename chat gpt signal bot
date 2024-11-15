@@ -1,0 +1,69 @@
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+
+# Initialize with Coinbase Pro API client (replace with your API credentials)
+# Authenticated client setup (api_key, api_secret, passphrase)
+
+def calculate_indicators(data):
+    """Calculate technical indicators and add them as columns to the DataFrame."""
+    data['ema_short'] = data['close'].ewm(span=20, adjust=False).mean()
+    data['ema_long'] = data['close'].ewm(span=50, adjust=False).mean()
+    data['macd'], data['macd_signal'] = macd(data['close'])
+    data['rsi'] = rsi(data['close'], period=14)
+    data['tsi'] = tsi(data['close'])
+    data['stoch_rsi'] = stochastic_rsi(data['close'])
+    data['atr'] = atr(data['high'], data['low'], data['close'])
+    data['bollinger_upper'], data['bollinger_lower'] = bollinger_bands(data['close'])
+    data['obv'] = obv(data['close'], data['volume'])
+    data['mfi'] = mfi(data['high'], data['low'], data['close'], data['volume'], period=14)
+    return data
+
+def generate_score(data):
+    """Generate a weighted score based on indicator signals."""
+    score = 0
+    if data['ema_short'][-1] > data['ema_long'][-1]: score += 1
+    if data['macd'][-1] > data['macd_signal'][-1]: score += 1
+    if data['rsi'][-1] < 30: score += 1
+    if data['tsi'][-1] > 0: score += 1
+    if data['stoch_rsi'][-1] < 20: score += 1
+    if data['close'][-1] > data['bollinger_lower'][-1]: score += 1
+    return score
+
+def apply_statistical_filter(data):
+    """Statistical filter to validate high-probability trades."""
+    data['returns'] = data['close'].pct_change()
+    data['z_score'] = (data['returns'] - data['returns'].mean()) / data['returns'].std()
+    return abs(data['z_score'][-1]) > 2  # Potential buy/sell if z_score > 2
+
+def machine_learning_filter(data):
+    """Machine Learning filter for trade validation."""
+    features = data[['ema_short', 'ema_long', 'macd', 'rsi', 'tsi', 'stoch_rsi', 'atr', 'obv', 'mfi']]
+    model = RandomForestClassifier()
+    model.fit(features[:-1], data['target'])  # Assuming 'target' column has labels for training
+    return model.predict(features[-1:]) == 1
+
+def execute_trade(signal):
+    """Execute trade based on signal."""
+    if signal > 5:
+        print("High-confidence Buy signal detected. Placing buy order.")
+        # execute_buy_order()
+    elif signal < -5:
+        print("High-confidence Sell signal detected. Placing sell order.")
+        # execute_sell_order()
+
+def run_bot():
+    """Runs the bot using the complex strategy."""
+    data = fetch_data()  # Your function to fetch data from Coinbase
+    data = calculate_indicators(data)
+    score = generate_score(data)
+    
+    # Apply filters
+    if apply_statistical_filter(data):
+        signal = score
+        if machine_learning_filter(data):  # Optional ML confirmation
+            execute_trade(signal)
+
+while True:
+    run_bot()
+    time.sleep(3600)  # Run every hour or preferred interval
