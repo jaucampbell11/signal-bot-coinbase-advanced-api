@@ -1,1 +1,207 @@
-Python code and how to setup
+Python code and how to set up
+Below is the completed script package coded to integrate with Coinbase Advanced API, along with instructions for deploying and customizing. This includes live trading, alerts for manual signals, and backtesting functionality.
+
+
+---
+
+1. Pre-Requisites
+
+Set Up Your Environment
+
+1. Install Python: Ensure you have Python 3.8+ installed.
+
+
+2. Install Required Libraries:
+
+pip install pandas numpy cbpro ta matplotlib requests
+
+
+3. Coinbase Advanced API Setup:
+
+Log into your Coinbase Advanced Trade account.
+
+Navigate to API Settings and create an API key with:
+
+Permissions: View, Trade.
+
+
+Note your API Key, API Secret, and Passphrase.
+
+
+
+4. Telegram Bot Setup (Optional):
+
+Create a Telegram bot via BotFather.
+
+Save the bot token and your chat ID.
+
+
+
+
+
+---
+
+2. Live Trading and Alerts Code
+
+Live Trading Bot
+
+import cbpro
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import requests
+
+# Coinbase API Credentials
+API_KEY = 'your_api_key'
+API_SECRET = 'your_api_secret'
+API_PASSPHRASE = 'your_passphrase'
+
+# Initialize Coinbase API Client
+client = cbpro.AuthenticatedClient(API_KEY, API_SECRET, API_PASSPHRASE)
+
+# Fetch Historical Data
+def fetch_data(symbol, granularity):
+    data = client.get_product_historic_rates(symbol, granularity=granularity)
+    df = pd.DataFrame(data, columns=['time', 'low', 'high', 'open', 'close', 'volume'])
+    df['time'] = pd.to_datetime(df['time'], unit='s')
+    df = df.sort_values('time').reset_index(drop=True)
+    return df
+
+# Calculate EMA
+def calculate_ema(data, period):
+    return data['close'].ewm(span=period, adjust=False).mean()
+
+# Identify Market Structure Shifts
+def identify_mss(data):
+    data['prev_high'] = data['high'].shift(1)
+    data['prev_low'] = data['low'].shift(1)
+    data['BoS'] = (data['close'] > data['prev_high']) | (data['close'] < data['prev_low'])
+    return data
+
+# Generate Buy/Sell Signals
+def generate_signals(data):
+    data['ema50'] = calculate_ema(data, 50)
+    data = identify_mss(data)
+    data['long_signal'] = (data['BoS'] & (data['close'] > data['ema50']))
+    data['short_signal'] = (data['BoS'] & (data['close'] < data['ema50']))
+    return data
+
+# Place Orders
+def place_order(order_type, symbol, size):
+    if order_type == 'buy':
+        order = client.place_market_order(product_id=symbol, side='buy', size=size)
+    elif order_type == 'sell':
+        order = client.place_market_order(product_id=symbol, side='sell', size=size)
+    return order
+
+# Telegram Alerts
+def send_telegram_alert(message):
+    bot_token = 'your_bot_token'
+    chat_id = 'your_chat_id'
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    requests.post(url, data={'chat_id': chat_id, 'text': message})
+
+# Execute Live Trading
+def live_trading(symbol, granularity, risk_capital):
+    data = fetch_data(symbol, granularity)
+    data = generate_signals(data)
+    latest = data.iloc[-1]
+
+    if latest['long_signal']:
+        send_telegram_alert(f"Buy Signal for {symbol} at {latest['close']}")
+        place_order('buy', symbol, size=risk_capital / latest['close'])
+    elif latest['short_signal']:
+        send_telegram_alert(f"Sell Signal for {symbol} at {latest['close']}")
+        place_order('sell', symbol, size=risk_capital / latest['close'])
+
+# Parameters
+SYMBOL = 'BTC-USD'
+GRANULARITY = 3600  # 1-hour candles
+RISK_CAPITAL = 100  # USD
+
+# Run Bot
+live_trading(SYMBOL, GRANULARITY, RISK_CAPITAL)
+
+
+---
+
+3. Backtesting Code
+
+import matplotlib.pyplot as plt
+
+# Backtest Strategy
+def backtest(data, initial_balance=1000, risk_percent=1):
+    balance = initial_balance
+    position_size = 0
+    data['balance'] = balance
+
+    for i, row in data.iterrows():
+        if row['long_signal']:
+            position_size = balance * (risk_percent / 100)
+            balance -= position_size
+        elif row['short_signal'] and position_size > 0:
+            balance += position_size * (row['close'] / row['open'])
+            position_size = 0
+        data.at[i, 'balance'] = balance
+
+    return data
+
+# Plot Backtest Results
+def plot_backtest(data):
+    plt.figure(figsize=(14, 7))
+    plt.plot(data['time'], data['close'], label='Close Price')
+    plt.plot(data['time'], data['balance'], label='Balance')
+    plt.scatter(data['time'][data['long_signal']], data['close'][data['long_signal']], label='Buy Signal', marker='^', color='green')
+    plt.scatter(data['time'][data['short_signal']], data['close'][data['short_signal']], label='Sell Signal', marker='v', color='red')
+    plt.legend()
+    plt.show()
+
+# Fetch and Backtest
+data = fetch_data(SYMBOL, GRANULARITY)
+data = generate_signals(data)
+results = backtest(data)
+
+# Plot Results
+plot_backtest(results)
+
+
+---
+
+Deployment Instructions
+
+1. Running the Bot Locally:
+
+Save the script as trading_bot.py.
+
+Run with:
+
+python trading_bot.py
+
+
+
+2. Deploying on a Cloud Server:
+
+Use platforms like AWS EC2, Google Cloud, or DigitalOcean.
+
+Install required dependencies on the server.
+
+Set up a cron job or a system service to keep the bot running.
+
+
+
+3. Customizations:
+
+Add More Indicators: Integrate RSI, MACD, or Bollinger Bands for multi-confirmation signals.
+
+Dynamic Risk Management: Adjust risk_capital based on market volatility.
+
+Trade Logging: Save all trades and signals to a database for review.
+
+
+
+
+
+---
+
+Would you like detailed steps on deploying this on a specific cloud platform or enhancing certain features?
+
