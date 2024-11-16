@@ -1,0 +1,239 @@
+Bundled Bot Script and Beginner-Friendly Guide
+
+Here is the bundled Python script for the enhanced trading bot with all features, followed by a step-by-step guide for beginners to set it up and run.
+
+
+---
+
+Bundled Python Script
+
+Save this script as trading_bot.py:
+
+import cbpro
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import requests
+import logging
+import time
+
+# Coinbase API Credentials
+API_KEY = 'your_api_key'
+API_SECRET = 'your_api_secret'
+API_PASSPHRASE = 'your_passphrase'
+
+# Telegram Credentials
+TELEGRAM_BOT_TOKEN = 'your_bot_token'
+TELEGRAM_CHAT_ID = 'your_chat_id'
+
+# Configure Logging
+logging.basicConfig(filename='trade_logs.log', level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Initialize Coinbase API Client
+client = cbpro.AuthenticatedClient(API_KEY, API_SECRET, API_PASSPHRASE)
+
+# Fetch Historical Data
+def fetch_data(symbol, granularity):
+    try:
+        data = client.get_product_historic_rates(symbol, granularity=granularity)
+        df = pd.DataFrame(data, columns=['time', 'low', 'high', 'open', 'close', 'volume'])
+        df['time'] = pd.to_datetime(df['time'], unit='s')
+        df = df.sort_values('time').reset_index(drop=True)
+        return df
+    except Exception as e:
+        logging.error(f"Error fetching data for {symbol}: {e}")
+        time.sleep(5)
+        return fetch_data(symbol, granularity)
+
+# Calculate EMA
+def calculate_ema(data, period):
+    return data['close'].ewm(span=period, adjust=False).mean()
+
+# Calculate ATR
+def calculate_atr(data, period=14):
+    data['tr'] = np.maximum(data['high'] - data['low'], 
+                            np.maximum(abs(data['high'] - data['close'].shift(1)), 
+                                       abs(data['low'] - data['close'].shift(1))))
+    data['atr'] = data['tr'].rolling(window=period).mean()
+    return data
+
+# Identify Market Structure Shifts
+def identify_mss(data):
+    data['prev_high'] = data['high'].shift(1)
+    data['prev_low'] = data['low'].shift(1)
+    data['BoS'] = (data['close'] > data['prev_high']) | (data['close'] < data['prev_low'])
+    return data
+
+# Generate Buy/Sell Signals
+def generate_signals(data):
+    data['ema50'] = calculate_ema(data, 50)
+    data = calculate_atr(data)
+    data = identify_mss(data)
+    data['long_signal'] = (data['BoS'] & (data['close'] > data['ema50']))
+    data['short_signal'] = (data['BoS'] & (data['close'] < data['ema50']))
+    return data
+
+# Calculate Position Size Based on Risk
+def calculate_position_size(balance, atr, risk_percent=1):
+    risk_amount = balance * (risk_percent / 100)
+    position_size = risk_amount / atr
+    return position_size
+
+# Place Orders
+def place_order(order_type, symbol, size):
+    try:
+        if order_type == 'buy':
+            order = client.place_market_order(product_id=symbol, side='buy', size=size)
+        elif order_type == 'sell':
+            order = client.place_market_order(product_id=symbol, side='sell', size=size)
+        logging.info(f"Order placed: {order}")
+    except Exception as e:
+        logging.error(f"Error placing order: {e}")
+
+# Telegram Alerts
+def send_telegram_alert(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    requests.post(url, data={'chat_id': TELEGRAM_CHAT_ID, 'text': message})
+
+# Execute Live Trading
+def live_trading(symbol, granularity, risk_percent, balance=1000):
+    data = fetch_data(symbol, granularity)
+    data = generate_signals(data)
+    latest = data.iloc[-1]
+
+    if latest['long_signal']:
+        atr = latest['atr']
+        size = calculate_position_size(balance, atr, risk_percent)
+        send_telegram_alert(f"Buy Signal for {symbol} at {latest['close']}")
+        place_order('buy', symbol, size)
+    elif latest['short_signal']:
+        send_telegram_alert(f"Sell Signal for {symbol} at {latest['close']}")
+        place_order('sell', symbol, size)
+
+# Trade Multiple Symbols
+def trade_multiple_symbols(symbols, granularity, risk_percent):
+    for symbol in symbols:
+        try:
+            live_trading(symbol, granularity, risk_percent)
+        except Exception as e:
+            logging.error(f"Error trading {symbol}: {e}")
+
+# Parameters
+SYMBOLS = ['BTC-USD', 'ETH-USD', 'ADA-USD']
+GRANULARITY = 3600  # 1-hour candles
+RISK_PERCENT = 1  # % of account balance to risk
+
+# Run Bot
+trade_multiple_symbols(SYMBOLS, GRANULARITY, RISK_PERCENT)
+
+
+---
+
+Beginner-Friendly How-To Guide
+
+Step 1: Setting Up Your Environment
+
+1. Install Python:
+
+Download Python from python.org.
+
+During installation, check "Add Python to PATH."
+
+
+
+2. Install Required Libraries: Open your terminal (Command Prompt or Powershell on Windows, Terminal on Mac/Linux) and run:
+
+pip install pandas numpy cbpro ta matplotlib requests
+
+
+3. Get Coinbase API Credentials:
+
+Log in to Coinbase Advanced.
+
+Go to Settings > API and create a new API key with trading permissions.
+
+Save your API Key, API Secret, and Passphrase.
+
+
+
+4. Set Up Telegram Alerts (Optional):
+
+Open Telegram and create a bot with BotFather.
+
+Save the bot token and your chat ID (use this guide if unsure).
+
+
+
+
+
+---
+
+Step 2: Running the Bot Locally
+
+1. Save the Script:
+
+Open any text editor (Notepad works) and paste the script.
+
+Save the file as trading_bot.py.
+
+
+
+2. Run the Bot: Open your terminal, navigate to the folder where you saved the script, and type:
+
+python trading_bot.py
+
+
+3. Monitor the Output:
+
+If everything is set up correctly, the bot will start fetching data and trading.
+
+Alerts will be sent to Telegram if configured.
+
+
+
+
+
+---
+
+Step 3: Automating the Bot
+
+1. Automate with Task Scheduler (Windows):
+
+Open Task Scheduler and create a new task.
+
+Set it to run python trading_bot.py at regular intervals.
+
+
+
+2. Use a Cloud Platform:
+
+Follow the deployment instructions above to host the bot on AWS EC2 or similar.
+
+
+
+
+
+---
+
+Common Issues and Fixes
+
+1. Library Errors:
+
+Ensure all libraries are installed by re-running:
+
+pip install pandas numpy cbpro ta matplotlib requests
+
+
+
+2. API Errors:
+
+Double-check your Coinbase API key permissions.
+
+Ensure your account has sufficient funds to trade.
+
+
+
+
+Would you like further assistance with specific steps or features?
+
